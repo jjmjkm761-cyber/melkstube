@@ -435,6 +435,12 @@
   let videos = [];
   let currentVideo = null;
 
+  // =========================================================
+  // ÁUDIO / DUBLAGEM MULTILÍNGUE
+  // =========================================================
+  let currentAudioTracks = [];
+  let audioSyncTimer = null;
+
   const $ = id => document.getElementById(id);
   const tr = key => T[lang][key] || T["pt-BR"][key] || key;
 
@@ -604,25 +610,16 @@
     if (user) {
       area.innerHTML = `
         <span class="account-label">${esc(userLabel())}</span>
-        <button id="logoutBtn" class="btn">${esc(tr("logout"))}</button>
+        <button id="logoutBtn" class="outline" type="button">${esc(tr("logout"))}</button>
       `;
-
       $("logoutBtn")?.addEventListener("click", logout);
     } else {
-      area.innerHTML = "";
-    }
-
-    const loginBtn = $("loginBtn");
-    const signupBtn = $("signupBtn");
-
-    if (loginBtn) {
-      loginBtn.textContent = tr("login");
-      loginBtn.style.display = user ? "none" : "";
-    }
-
-    if (signupBtn) {
-      signupBtn.textContent = tr("signup");
-      signupBtn.style.display = user ? "none" : "";
+      area.innerHTML = `
+        <button class="outline" id="loginBtn" type="button">${esc(tr("login"))}</button>
+        <button class="primary" id="signupBtn" type="button">${esc(tr("signup"))}</button>
+      `;
+      $("loginBtn")?.addEventListener("click", () => openAuth("login"));
+      $("signupBtn")?.addEventListener("click", () => openAuth("signup"));
     }
   }
 
@@ -761,6 +758,255 @@
     });
   }
 
+
+  function stopDubAudio() {
+    const audio = $("dubAudio");
+    if (!audio) return;
+
+    audio.pause();
+    audio.removeAttribute("src");
+    audio.load();
+
+    if (audioSyncTimer) {
+      clearInterval(audioSyncTimer);
+      audioSyncTimer = null;
+    }
+  }
+
+  function resetAudioLanguage() {
+    const select = $("audioLanguageSelect");
+    const statusEl = $("audioStatus");
+    const player = $("watchVideo");
+
+    currentAudioTracks = [];
+    stopDubAudio();
+
+    if (player) player.muted = false;
+
+    if (select) {
+      select.innerHTML = '<option value="original">🇧🇷 Original</option>';
+      select.value = "original";
+    }
+
+    if (statusEl) {
+      statusEl.textContent = "Áudio original";
+    }
+  }
+
+  async function loadAudioTracks(videoId) {
+    const select = $("audioLanguageSelect");
+    if (!select || !client || !videoId) return;
+
+    resetAudioLanguage();
+
+    try {
+      const { data, error } = await client
+        .from("video_audio_tracks")
+        .select("id,video_id,language,label,flag,storage_path,status")
+        .eq("video_id", videoId)
+        .eq("status", "ready")
+        .order("language");
+
+      if (error) throw error;
+
+      currentAudioTracks = Array.isArray(data) ? data : [];
+
+      const labels = {
+        "pt-BR": "🇧🇷 Português",
+        "en": "🇺🇸 English",
+        "es": "🇪🇸 Español",
+        "fr": "🇫🇷 Français",
+        "de": "🇩🇪 Deutsch",
+        "it": "🇮🇹 Italiano",
+        "ja": "🇯🇵 日本語",
+        "zh": "🇨🇳 中文",
+        "ar": "🇸🇦 العربية",
+        "uk": "🇺🇦 Українська"
+      };
+
+      for (const track of currentAudioTracks) {
+        if (!track?.language || !track?.storage_path) continue;
+
+        const option = document.createElement("option");
+        option.value = track.language;
+
+        const fallbackLabel =
+          labels[track.language] ||
+          `🎧 ${track.language}`;
+
+        option.textContent =
+          track.flag && track.label
+            ? `${track.flag} ${track.label}`
+            : track.label || fallbackLabel;
+
+        select.appendChild(option);
+      }
+    } catch (error) {
+      // A tabela ainda pode não existir durante a primeira instalação.
+      // Nesse caso, o vídeo continua funcionando normalmente.
+      console.warn("Faixas de áudio não disponíveis:", error);
+      currentAudioTracks = [];
+    }
+  }
+
+  function syncDubAudio(force = false) {
+    const player = $("watchVideo");
+    const audio = $("dubAudio");
+
+    if (!player || !audio || !audio.src) return;
+
+    const difference =
+      Math.abs((audio.currentTime || 0) - (player.currentTime || 0));
+
+    if (force || difference > 0.20) {
+      try {
+        audio.currentTime = player.currentTime;
+      } catch (error) {
+        console.warn("Não foi possível sincronizar a dublagem:", error);
+      }
+    }
+
+    audio.playbackRate = player.playbackRate || 1;
+  }
+
+  async function selectAudioLanguage(language) {
+    const player = $("watchVideo");
+    const audio = $("dubAudio");
+    const statusEl = $("audioStatus");
+
+    if (!player || !audio) return;
+
+    if (language === "original") {
+      stopDubAudio();
+      player.muted = false;
+
+      if (statusEl) statusEl.textContent = "Áudio original";
+      return;
+    }
+
+    const track = currentAudioTracks.find(
+      item => item.language === language
+    );
+
+    if (!track) {
+      player.muted = false;
+
+      const select = $("audioLanguageSelect");
+      if (select) select.value = "original";
+
+      if (statusEl) {
+        statusEl.textContent =
+          "Esta dublagem ainda não está disponível";
+      }
+
+      return;
+    }
+
+    try {
+      const { data } = client.storage
+        .from("audio")
+        .getPublicUrl(track.storage_path);
+
+      const publicUrl = data?.publicUrl;
+
+      if (!publicUrl) {
+        throw new Error("URL pública da faixa de áudio não encontrada.");
+      }
+
+      const wasPlaying = !player.paused;
+
+      audio.pause();
+      audio.src = publicUrl;
+      audio.load();
+      audio.currentTime = player.currentTime;
+      audio.playbackRate = player.playbackRate || 1;
+
+      // O vídeo permanece visível, mas seu áudio original fica mudo.
+      player.muted = true;
+
+      if (statusEl) {
+        statusEl.textContent =
+          `Dublado em ${track.label || track.language}`;
+      }
+
+      if (audioSyncTimer) clearInterval(audioSyncTimer);
+
+      audioSyncTimer = setInterval(() => {
+        if (!player.paused && !audio.paused) {
+          syncDubAudio(false);
+        }
+      }, 500);
+
+      if (wasPlaying) {
+        await audio.play();
+      }
+    } catch (error) {
+      console.error("Erro ao carregar a dublagem:", error);
+
+      stopDubAudio();
+      player.muted = false;
+
+      const select = $("audioLanguageSelect");
+      if (select) select.value = "original";
+
+      if (statusEl) {
+        statusEl.textContent = "Erro ao carregar a dublagem";
+      }
+    }
+  }
+
+  function setupAudioPlayerEvents() {
+    const player = $("watchVideo");
+    const audio = $("dubAudio");
+    const select = $("audioLanguageSelect");
+
+    if (!player || !audio || !select) return;
+
+    select.addEventListener("change", async event => {
+      await selectAudioLanguage(event.target.value);
+    });
+
+    player.addEventListener("play", async () => {
+      if (select.value === "original" || !audio.src) return;
+
+      syncDubAudio(true);
+
+      try {
+        await audio.play();
+      } catch (error) {
+        console.warn("Não foi possível iniciar a dublagem:", error);
+      }
+    });
+
+    player.addEventListener("pause", () => {
+      if (!audio.paused) audio.pause();
+    });
+
+    player.addEventListener("seeking", () => {
+      if (select.value !== "original" && audio.src) {
+        syncDubAudio(true);
+      }
+    });
+
+    player.addEventListener("ratechange", () => {
+      if (audio.src) {
+        audio.playbackRate = player.playbackRate || 1;
+      }
+    });
+
+    player.addEventListener("ended", () => {
+      audio.pause();
+      try {
+        audio.currentTime = 0;
+      } catch (_) {}
+    });
+
+    audio.addEventListener("ended", () => {
+      // Se a faixa acabar antes do vídeo, ela simplesmente para.
+      // O vídeo continua visível e o usuário pode trocar de faixa.
+    });
+  }
+
   async function watch(id) {
     const video = videos.find(v => String(v.id) === String(id));
     if (!video) return;
@@ -775,6 +1021,9 @@
       .getPublicUrl(video.storage_path);
 
     player.src = data.publicUrl;
+    player.load();
+
+    await loadAudioTracks(video.id);
 
     const title = $("watchTitle");
     if (title) title.textContent = video.title || "";
@@ -938,10 +1187,18 @@
     return true;
   }
 
+  function getSelectedDubbingLanguages() {
+    return Array.from(document.querySelectorAll('input[name="dubLanguages"]:checked'))
+      .map(input => input.value)
+      .filter(code => SUPPORTED.includes(code) && code !== "pt-BR");
+  }
+
   function openUpload() {
     if (!requireLogin()) return;
 
     status("uploadMessage", "");
+    const choices = document.querySelectorAll('input[name="dubLanguages"]');
+    choices.forEach(input => { input.checked = false; });
     modal("uploadModal", true);
   }
 
@@ -988,18 +1245,45 @@
 
       if (storageError) throw storageError;
 
-      const { error: insertError } = await client.from("videos").insert({
-        title,
-        description,
-        category,
-        storage_path: path,
-        user_id: user.id,
-        visibility: "public"
-      });
+      const { data: createdVideo, error: insertError } = await client
+        .from("videos")
+        .insert({
+          title,
+          description,
+          category,
+          storage_path: path,
+          user_id: user.id,
+          visibility: "public"
+        })
+        .select("id")
+        .single();
 
       if (insertError) throw insertError;
 
-      toast(tr("successUpload"));
+      const selectedLanguages = getSelectedDubbingLanguages();
+      let dubbingNotice = "";
+
+      if (selectedLanguages.length) {
+        const jobs = selectedLanguages.map(target_language => ({
+          video_id: createdVideo.id,
+          user_id: user.id,
+          target_language,
+          status: "pending"
+        }));
+
+        const { error: jobsError } = await client
+          .from("video_dubbing_jobs")
+          .insert(jobs);
+
+        if (jobsError) {
+          console.error("Vídeo publicado, mas não foi possível registrar as dublagens:", jobsError);
+          dubbingNotice = " O vídeo foi publicado, mas os pedidos de dublagem não foram registrados. Configure a tabela video_dubbing_jobs no Supabase.";
+        } else {
+          dubbingNotice = ` ${selectedLanguages.length} idioma(s) selecionado(s); pedidos registrados como pendentes.`;
+        }
+      }
+
+      toast(tr("successUpload") + dubbingNotice);
       modal("uploadModal", false);
 
       $("uploadForm")?.reset();
@@ -1054,8 +1338,8 @@
 
     document.querySelectorAll(".chip").forEach(chip => {
       chip.addEventListener("click", () => {
-        document.querySelectorAll(".chip").forEach(c => c.classList.remove("active"));
-        chip.classList.add("active");
+        document.querySelectorAll(".chip").forEach(c => c.classList.remove("selected"));
+        chip.classList.add("selected");
         activeCategory = chip.dataset.category || "Todos";
         renderVideos();
       });
@@ -1070,9 +1354,12 @@
           const player = $("watchVideo");
           if (player) {
             player.pause();
+            player.muted = false;
             player.removeAttribute("src");
             player.load();
           }
+
+          resetAudioLanguage();
           currentVideo = null;
         }
       });
@@ -1081,6 +1368,8 @@
     $("languageSelect")?.addEventListener("change", e => {
       applyLanguage(e.target.value);
     });
+
+    setupAudioPlayerEvents();
 
     client.auth.onAuthStateChange((_event, session) => {
       user = session?.user || null;
