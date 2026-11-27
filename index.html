@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#101116"><meta name="description" content="MelksTube — descubra, assista e compartilhe vídeos.">
+<title>MelksTube — Vídeos para todos</title>
+<link rel="stylesheet" href="styles.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="config.js"></script>
+<script defer src="app.js"></script>
+</head>
+<body>
+<header class="topbar">
+ <a class="brand" href="#"><span class="brand-mark">M</span>Melks<span>Tube</span></a>
+ <div class="search"><input id="searchInput" placeholder="Pesquisar vídeos..." aria-label="Pesquisar vídeos"><button id="searchBtn">⌕</button></div>
+ <div class="account" id="accountArea"><button class="outline" id="loginBtn">Entrar</button><button class="primary" id="signupBtn">Criar conta</button></div>
+</header>
+<main>
+ <section class="hero"><div class="hero-copy"><p class="eyebrow">SEU ESPAÇO DE VÍDEOS</p><h1>O que vamos assistir <span>hoje?</span></h1><p>Descubra novos conteúdos, compartilhe suas ideias e faça parte da comunidade MelksTube.</p><button class="primary" id="heroUpload">Publicar vídeo</button></div><div class="hero-art"><div class="play">▶</div><div class="art-caption">ASSISTA • COMPARTILHE • DESCUBRA</div></div></section>
+ <nav class="categories" id="categories"><button class="chip selected" data-category="Todos">Todos</button><button class="chip" data-category="Música">Música</button><button class="chip" data-category="Entretenimento">Entretenimento</button><button class="chip" data-category="Educação">Educação</button><button class="chip" data-category="Esportes">Esportes</button><button class="chip" data-category="Notícias">Notícias</button><button class="chip" data-category="Outros">Outros</button></nav>
+ <div class="section-heading"><div><p class="eyebrow">COMUNIDADE</p><h2>Vídeos recentes</h2></div><span id="feedStatus" class="muted">Conectando...</span></div>
+ <div id="videoGrid" class="video-grid"><div class="empty">Carregando vídeos...</div></div>
+ <section class="upload-panel"><div><p class="eyebrow">É A SUA VEZ</p><h2>Tem um vídeo para compartilhar?</h2><p>Crie sua conta gratuitamente e publique seu conteúdo na comunidade.</p></div><button class="primary" id="uploadCta">Enviar meu vídeo</button></section>
+</main>
+<footer><a class="brand small" href="#"><span class="brand-mark">M</span>Melks<span>Tube</span></a><span>© <span id="year"></span> MelksTube. Compartilhe com responsabilidade.</span></footer>
+
+<div class="modal hidden" id="authModal"><div class="modal-card"><button class="close" data-close="authModal">×</button><p class="eyebrow">BEM-VINDO AO MELKSTUBE</p><h2 id="authTitle">Entrar</h2><form id="authForm"><label>E-mail<input id="authEmail" type="email" required autocomplete="email"></label><label>Senha<input id="authPassword" type="password" minlength="6" required autocomplete="current-password"></label><button class="primary full" id="authSubmit">Entrar</button><p id="authMessage" class="form-message"></p></form><p class="switch-auth" id="authSwitch">Ainda não tem conta? <button class="text-button" id="switchAuth">Criar conta</button></p></div></div>
+
+<div class="modal hidden" id="uploadModal"><div class="modal-card wide"><button class="close" data-close="uploadModal">×</button><p class="eyebrow">COMPARTILHE SEU CONTEÚDO</p><h2>Publicar vídeo</h2><form id="uploadForm"><label>Título<input id="videoTitle" maxlength="120" required placeholder="Dê um título ao seu vídeo"></label><label>Descrição<textarea id="videoDescription" rows="3" maxlength="2000" placeholder="Sobre o que é este vídeo?"></textarea></label><label>Categoria<select id="videoCategory"><option>Música</option><option>Entretenimento</option><option>Educação</option><option>Esportes</option><option>Notícias</option><option>Outros</option></select></label><label>Arquivo de vídeo<input id="videoFile" type="file" accept="video/mp4,video/webm,video/quicktime" required></label><p class="hint">Protótipo gratuito: até 50 MB por vídeo. Prefira MP4 (H.264/AAC).</p><div class="progress hidden" id="uploadProgress"><div id="progressBar"></div></div><button class="primary full" id="publishBtn">Enviar e publicar</button><p id="uploadMessage" class="form-message"></p></form></div></div>
+
+<div class="modal hidden" id="watchModal"><div class="modal-card player-card"><button class="close" data-close="watchModal">×</button><video id="watchVideo" controls playsinline></video><h2 id="watchTitle"></h2><p id="watchDescription" class="muted"></p><div class="watch-meta"><span id="watchAuthor"></span><button class="outline" id="likeBtn">♡ Curtir <span id="likeCount">0</span></button></div><section class="comments"><h3>Comentários</h3><form id="commentForm"><input id="commentInput" maxlength="2000" placeholder="Escreva um comentário..." required><button class="primary">Enviar</button></form><div id="commentList"></div></section></div></div>
+<div class="toast hidden" id="toast"></div>
+</body></html>
